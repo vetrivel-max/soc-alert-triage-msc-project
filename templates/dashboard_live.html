@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-Time Live SOC Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { color: #4fc3f7; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
+        th { background: #16213e; position: sticky; top: 0; }
+        .Attack { color: #ff5252; font-weight: bold; }
+        .Normal { color: #66bb6a; }
+        .High { background: #e65100; padding: 3px 8px; border-radius: 4px; }
+        .Medium { background: #f9a825; padding: 3px 8px; border-radius: 4px; color: #000; }
+        .table-wrap { max-height: 80vh; overflow-y: auto; }
+        .status-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #66bb6a; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div style="background:#16213e; padding:12px 20px; margin:-20px -20px 0 -20px; display:flex; gap:20px;">
+        <a href="/" style="color:#4fc3f7; text-decoration:none; font-weight:bold;">📊 Static Dashboard</a>
+        <a href="/live" style="color:#4fc3f7; text-decoration:none; font-weight:bold;">🧪 Own Model (Test Data)</a>
+        <a href="/live-feed" style="color:#fff; background:#4fc3f7; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:bold;">🔴 Live Feed</a>
+    </div>
+    <p style="color:#888; margin:8px 0 20px 0; font-size:0.9em;">You are viewing: <strong>Live Feed Dashboard</strong> (real-time Kali VM capture)</p>
+
+    <h1>🔴 Real-Time Live SOC Dashboard</h1>
+    <p>Live capture from Kali VM lab, refreshing every 3 seconds</p>
+    <div class="status-bar">
+        <div class="dot"></div>
+        <span id="statusText">Connecting...</span>
+    </div>
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Time</th>
+                <th>Src IP</th>
+                <th>Dst IP</th>
+                <th>Status</th>
+                <th>Confidence</th>
+                <th>Attack Type</th>
+                <th>Risk Level</th>
+            </tr>
+        </thead>
+        <tbody id="alertsBody"></tbody>
+    </table>
+    </div>
+
+    <script>
+        function loadAlerts() {
+            fetch('/api/live-feed')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('statusText').textContent = 'Disconnected: ' + data.error;
+                        return;
+                    }
+                    document.getElementById('statusText').textContent = `Live - ${data.length} recent flows`;
+                    const tbody = document.getElementById('alertsBody');
+                    tbody.innerHTML = '';
+                    data.forEach(alert => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${alert.id}</td>
+                            <td>${alert.timestamp}</td>
+                            <td>${alert.src_ip}</td>
+                            <td>${alert.dst_ip}</td>
+                            <td class="${alert.status}">${alert.status}</td>
+                            <td>${alert.confidence}%</td>
+                            <td>${alert.attack_type || '-'}</td>
+                            <td>${alert.risk_level ? `<span class="${alert.risk_level}">${alert.risk_level}</span>` : '-'}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                });
+        }
+
+        loadAlerts();
+        setInterval(loadAlerts, 3000);
+    </script>
+</body>
+</html>
