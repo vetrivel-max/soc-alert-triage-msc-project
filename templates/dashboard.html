@@ -14,18 +14,39 @@
         .High { background: #e65100; padding: 3px 8px; border-radius: 4px; }
         .Medium { background: #f9a825; padding: 3px 8px; border-radius: 4px; color: #000; }
         .reasons { font-size: 0.85em; color: #aaa; }
+        .nav { background:#16213e; padding:12px 20px; margin:-20px -20px 0 -20px; display:flex; gap:20px; flex-wrap: wrap; }
+        .nav a { text-decoration:none; font-weight:bold; color:#4fc3f7; }
+        .nav a.active { color:#fff; background:#4fc3f7; padding:6px 12px; border-radius:6px; }
+        .stats-panel { display: flex; gap: 16px; margin: 20px 0; flex-wrap: wrap; }
+        .stat-card { background: #16213e; border-radius: 8px; padding: 16px 20px; min-width: 140px; }
+        .stat-card .label { color: #888; font-size: 0.85em; }
+        .stat-card .value { font-size: 1.8em; font-weight: bold; margin-top: 4px; }
+        .stat-total .value { color: #4fc3f7; }
+        .stat-attack .value { color: #ff5252; }
+        .stat-normal .value { color: #66bb6a; }
+        .stat-critical .value { color: #ff1744; }
+        .stat-high .value { color: #ff9100; }
+        .stat-medium .value { color: #ffca28; }
+        .export-btn { background:#4fc3f7; color:#000; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer; margin-bottom:16px; }
+        .export-btn:hover { background:#29b6f6; }
     </style>
 </head>
 <body>
-    <div style="background:#16213e; padding:12px 20px; margin:-20px -20px 0 -20px; display:flex; gap:20px;">
-        <a href="/" style="color:#fff; background:#4fc3f7; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:bold;">📊 Static Dashboard</a>
-        <a href="/live" style="color:#4fc3f7; text-decoration:none; font-weight:bold;">🧪 Own Model (Test Data)</a>
-        <a href="/live-feed" style="color:#4fc3f7; text-decoration:none; font-weight:bold;">🔴 Live Feed</a>
+    <div class="nav">
+        <a href="/" class="active">📊 Static Dashboard</a>
+        <a href="/live">🧪 Own Model (Test Data)</a>
+        <a href="/live-feed">🔴 Live Feed</a>
+        <a href="/model-comparison">📈 Model Comparison</a>
     </div>
     <p style="color:#888; margin:8px 0 20px 0; font-size:0.9em;">You are viewing: <strong>Static Dashboard</strong> (CICIDS2017-trained model)</p>
 
     <h1>🛡️ SOC Alert Triage Dashboard</h1>
     <p>Live traffic analysis powered by Machine Learning</p>
+
+    <div class="stats-panel" id="statsPanel"></div>
+
+    <button class="export-btn" onclick="exportToCSV(currentAlerts, 'static_dashboard_export.csv')">⬇️ Export to CSV</button>
+
     <table id="alertsTable">
         <thead>
             <tr>
@@ -42,11 +63,42 @@
     </table>
 
     <script>
+        let currentAlerts = [];
+
+        function exportToCSV(alerts, filename) {
+            if (!alerts || alerts.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            const headers = Object.keys(alerts[0]).filter(k => k !== 'top_reasons');
+            const rows = alerts.map(a => headers.map(h => `"${a[h] ?? ''}"`).join(','));
+            const csv = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
         fetch('/api/alerts')
             .then(res => res.json())
             .then(data => {
+                const stats = data.stats;
+                document.getElementById('statsPanel').innerHTML = `
+                    <div class="stat-card stat-total"><div class="label">Total Alerts</div><div class="value">${stats.total}</div></div>
+                    <div class="stat-card stat-attack"><div class="label">Attacks</div><div class="value">${stats.attacks}</div></div>
+                    <div class="stat-card stat-normal"><div class="label">Normal</div><div class="value">${stats.normal}</div></div>
+                    <div class="stat-card stat-critical"><div class="label">Critical Risk</div><div class="value">${stats.risk_counts.Critical}</div></div>
+                    <div class="stat-card stat-high"><div class="label">High Risk</div><div class="value">${stats.risk_counts.High}</div></div>
+                    <div class="stat-card stat-medium"><div class="label">Medium Risk</div><div class="value">${stats.risk_counts.Medium}</div></div>
+                `;
+
+                currentAlerts = data.alerts;
+
                 const tbody = document.getElementById('alertsBody');
-                data.forEach(alert => {
+                data.alerts.forEach(alert => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td>${alert.id}</td>

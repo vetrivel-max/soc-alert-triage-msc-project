@@ -28,6 +28,22 @@ ALERT_COUNT = 25
 KALI_LIVE_FEED_URL = 'http://192.168.10.130:8090/live_alerts.json'
 
 
+def calculate_stats(alerts):
+    total = len(alerts)
+    attacks = sum(1 for a in alerts if a['status'] == 'Attack')
+    normal = total - attacks
+    risk_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0}
+    for a in alerts:
+        if a.get('risk_level') in risk_counts:
+            risk_counts[a['risk_level']] += 1
+    return {
+        'total': total,
+        'attacks': attacks,
+        'normal': normal,
+        'risk_counts': risk_counts
+    }
+
+
 def analyze_sample(index):
     row = X_test.iloc[[index]]
     stage1_pred = stage1_model.predict(row)[0]
@@ -83,7 +99,7 @@ def analyze_own_sample(index):
         'status': 'Normal' if pred == 'Normal' else 'Attack',
         'confidence': confidence,
         'attack_type': None if pred == 'Normal' else pred,
-        'risk_level': None if pred == 'Normal' else get_risk_level_own(pred),
+        'risk_level': None if pred == 'Normal' else get_risk_level_own(pred, confidence),
         'top_reasons': []
     }
 
@@ -117,12 +133,23 @@ def dashboard_own():
     return render_template('dashboard_own.html')
 
 
+@app.route('/live-feed')
+def dashboard_live_feed():
+    return render_template('dashboard_live.html')
+
+
+@app.route('/model-comparison')
+def model_comparison_page():
+    return render_template('model_comparison.html')
+
+
 @app.route('/api/alerts')
 def get_alerts():
     count = min(ALERT_COUNT, len(X_test))
     alerts = [analyze_sample(i) for i in range(count)]
     alerts.sort(key=lambda x: x['status'] == 'Normal')
-    return jsonify(alerts)
+    stats = calculate_stats(alerts)
+    return jsonify({'alerts': alerts, 'stats': stats})
 
 
 @app.route('/api/own-alerts')
@@ -130,7 +157,8 @@ def get_own_alerts():
     count = min(ALERT_COUNT, len(X_test_own))
     alerts = [analyze_own_sample(i) for i in range(count)]
     alerts.sort(key=lambda x: x['status'] == 'Normal')
-    return jsonify(alerts)
+    stats = calculate_stats(alerts)
+    return jsonify({'alerts': alerts, 'stats': stats})
 
 
 @app.route('/api/live-feed')
@@ -139,14 +167,19 @@ def get_live_feed():
         response = requests.get(KALI_LIVE_FEED_URL, timeout=3)
         lines = response.text.strip().split('\n')
         alerts = [json.loads(line) for line in lines if line]
-        alerts.reverse()  # newest first
-        return jsonify(alerts[:100])  # show latest 100
+        alerts.reverse()
+        alerts = alerts[:100]
+        stats = calculate_stats(alerts)
+        return jsonify({'alerts': alerts, 'stats': stats})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/live-feed')
-def dashboard_live_feed():
-    return render_template('dashboard_live.html')    
+
+@app.route('/api/model-comparison')
+def get_model_comparison():
+    with open('model_comparison.json') as f:
+        data = json.load(f)
+    return jsonify(data)
 
 
 if __name__ == '__main__':

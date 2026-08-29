@@ -12,17 +12,45 @@
         .Normal { color: #66bb6a; }
         .High { background: #e65100; padding: 3px 8px; border-radius: 4px; }
         .Medium { background: #f9a825; padding: 3px 8px; border-radius: 4px; color: #000; }
-        .table-wrap { max-height: 80vh; overflow-y: auto; }
+        .Low { background: #43a047; padding: 3px 8px; border-radius: 4px; color: #fff; }
+        .table-wrap { max-height: 55vh; overflow-y: auto; }
         .status-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .dot { width: 10px; height: 10px; border-radius: 50%; background: #66bb6a; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .nav { background:#16213e; padding:12px 20px; margin:-20px -20px 0 -20px; display:flex; gap:20px; flex-wrap: wrap; }
+        .nav a { text-decoration:none; font-weight:bold; color:#4fc3f7; }
+        .nav a.active { color:#fff; background:#4fc3f7; padding:6px 12px; border-radius:6px; }
+        .stats-panel { display: flex; gap: 16px; margin: 20px 0; flex-wrap: wrap; }
+        .stat-card { background: #16213e; border-radius: 8px; padding: 16px 20px; min-width: 140px; }
+        .stat-card .label { color: #888; font-size: 0.85em; }
+        .stat-card .value { font-size: 1.8em; font-weight: bold; margin-top: 4px; }
+        .stat-total .value { color: #4fc3f7; }
+        .stat-attack .value { color: #ff5252; }
+        .stat-normal .value { color: #66bb6a; }
+        .stat-critical .value { color: #ff1744; }
+        .stat-high .value { color: #ff9100; }
+        .stat-medium .value { color: #ffca28; }
+        .stat-low .value { color: #43a047; }
+        .filter-bar { display: flex; gap: 12px; margin: 20px 0; flex-wrap: wrap; align-items: center; }
+        .filter-bar input, .filter-bar select {
+            background: #16213e; color: #eee; border: 1px solid #333; border-radius: 6px;
+            padding: 8px 12px; font-size: 0.95em;
+        }
+        .filter-bar input:focus, .filter-bar select:focus { outline: none; border-color: #4fc3f7; }
+        .filter-bar input { flex: 1; min-width: 200px; }
+        .clear-btn { background: #333; color: #eee; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+        .clear-btn:hover { background: #444; }
+        .export-btn { background:#4fc3f7; color:#000; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer; }
+        .export-btn:hover { background:#29b6f6; }
+        .count { color: #aaa; margin-bottom: 10px; }
     </style>
 </head>
 <body>
-    <div style="background:#16213e; padding:12px 20px; margin:-20px -20px 0 -20px; display:flex; gap:20px;">
-        <a href="/" style="color:#4fc3f7; text-decoration:none; font-weight:bold;">📊 Static Dashboard</a>
-        <a href="/live" style="color:#4fc3f7; text-decoration:none; font-weight:bold;">🧪 Own Model (Test Data)</a>
-        <a href="/live-feed" style="color:#fff; background:#4fc3f7; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:bold;">🔴 Live Feed</a>
+    <div class="nav">
+        <a href="/">📊 Static Dashboard</a>
+        <a href="/live">🧪 Own Model (Test Data)</a>
+        <a href="/live-feed" class="active">🔴 Live Feed</a>
+        <a href="/model-comparison">📈 Model Comparison</a>
     </div>
     <p style="color:#888; margin:8px 0 20px 0; font-size:0.9em;">You are viewing: <strong>Live Feed Dashboard</strong> (real-time Kali VM capture)</p>
 
@@ -32,6 +60,28 @@
         <div class="dot"></div>
         <span id="statusText">Connecting...</span>
     </div>
+
+    <div class="stats-panel" id="statsPanel"></div>
+
+    <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Search by Src IP or Dst IP...">
+        <select id="statusFilter">
+            <option value="">All Status</option>
+            <option value="Attack">Attack only</option>
+            <option value="Normal">Normal only</option>
+        </select>
+        <select id="riskFilter">
+            <option value="">All Risk Levels</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+        </select>
+        <button class="clear-btn" onclick="clearFilters()">Clear Filters</button>
+        <button class="export-btn" onclick="exportToCSV(currentDisplayedAlerts, 'live_feed_export.csv')">⬇️ Export to CSV</button>
+    </div>
+    <p class="count" id="alertCount"></p>
+
     <div class="table-wrap">
     <table>
         <thead>
@@ -51,6 +101,27 @@
     </div>
 
     <script>
+        let allAlerts = [];
+        let currentDisplayedAlerts = [];
+        let filtersActive = false;
+
+        function exportToCSV(alerts, filename) {
+            if (!alerts || alerts.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            const headers = Object.keys(alerts[0]).filter(k => k !== 'top_reasons');
+            const rows = alerts.map(a => headers.map(h => `"${a[h] ?? ''}"`).join(','));
+            const csv = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
         function loadAlerts() {
             fetch('/api/live-feed')
                 .then(res => res.json())
@@ -59,25 +130,78 @@
                         document.getElementById('statusText').textContent = 'Disconnected: ' + data.error;
                         return;
                     }
-                    document.getElementById('statusText').textContent = `Live - ${data.length} recent flows`;
-                    const tbody = document.getElementById('alertsBody');
-                    tbody.innerHTML = '';
-                    data.forEach(alert => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${alert.id}</td>
-                            <td>${alert.timestamp}</td>
-                            <td>${alert.src_ip}</td>
-                            <td>${alert.dst_ip}</td>
-                            <td class="${alert.status}">${alert.status}</td>
-                            <td>${alert.confidence}%</td>
-                            <td>${alert.attack_type || '-'}</td>
-                            <td>${alert.risk_level ? `<span class="${alert.risk_level}">${alert.risk_level}</span>` : '-'}</td>
-                        `;
-                        tbody.appendChild(row);
-                    });
+                    const stats = data.stats;
+                    document.getElementById('statsPanel').innerHTML = `
+                        <div class="stat-card stat-total"><div class="label">Total Alerts</div><div class="value">${stats.total}</div></div>
+                        <div class="stat-card stat-attack"><div class="label">Attacks</div><div class="value">${stats.attacks}</div></div>
+                        <div class="stat-card stat-normal"><div class="label">Normal</div><div class="value">${stats.normal}</div></div>
+                        <div class="stat-card stat-critical"><div class="label">Critical Risk</div><div class="value">${stats.risk_counts.Critical}</div></div>
+                        <div class="stat-card stat-high"><div class="label">High Risk</div><div class="value">${stats.risk_counts.High}</div></div>
+                        <div class="stat-card stat-medium"><div class="label">Medium Risk</div><div class="value">${stats.risk_counts.Medium}</div></div>
+                        <div class="stat-card stat-low"><div class="label">Low Risk</div><div class="value">${stats.risk_counts.Low}</div></div>
+                    `;
+                    document.getElementById('statusText').textContent = `Live - ${data.alerts.length} recent flows`;
+                    allAlerts = data.alerts;
+
+                    if (filtersActive) {
+                        applyFilters();
+                    } else {
+                        renderTable(allAlerts);
+                    }
                 });
         }
+
+        function renderTable(alerts) {
+            currentDisplayedAlerts = alerts;
+            document.getElementById('alertCount').textContent = `Showing ${alerts.length} of ${allAlerts.length} alerts`;
+            const tbody = document.getElementById('alertsBody');
+            tbody.innerHTML = '';
+            alerts.forEach(alert => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${alert.id}</td>
+                    <td>${alert.timestamp}</td>
+                    <td>${alert.src_ip}</td>
+                    <td>${alert.dst_ip}</td>
+                    <td class="${alert.status}">${alert.status}</td>
+                    <td>${alert.confidence}%</td>
+                    <td>${alert.attack_type || '-'}</td>
+                    <td>${alert.risk_level ? `<span class="${alert.risk_level}">${alert.risk_level}</span>` : '-'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const status = document.getElementById('statusFilter').value;
+            const risk = document.getElementById('riskFilter').value;
+
+            filtersActive = !!(search || status || risk);
+
+            const filtered = allAlerts.filter(alert => {
+                const matchesSearch = !search ||
+                    alert.src_ip.toLowerCase().includes(search) ||
+                    alert.dst_ip.toLowerCase().includes(search);
+                const matchesStatus = !status || alert.status === status;
+                const matchesRisk = !risk || alert.risk_level === risk;
+                return matchesSearch && matchesStatus && matchesRisk;
+            });
+
+            renderTable(filtered);
+        }
+
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('riskFilter').value = '';
+            filtersActive = false;
+            renderTable(allAlerts);
+        }
+
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('statusFilter').addEventListener('change', applyFilters);
+        document.getElementById('riskFilter').addEventListener('change', applyFilters);
 
         loadAlerts();
         setInterval(loadAlerts, 3000);

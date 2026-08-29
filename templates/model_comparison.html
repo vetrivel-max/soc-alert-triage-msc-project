@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Model Comparison</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { color: #4fc3f7; }
+        .chart-container { background: #16213e; border-radius: 8px; padding: 24px; margin: 20px 0; max-width: 900px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; max-width: 900px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
+        th { background: #16213e; }
+        .best { color: #66bb6a; font-weight: bold; }
+        .nav { background:#16213e; padding:12px 20px; margin:-20px -20px 0 -20px; display:flex; gap:20px; flex-wrap: wrap; }
+        .nav a { text-decoration:none; font-weight:bold; color:#4fc3f7; }
+        .nav a.active { color:#fff; background:#4fc3f7; padding:6px 12px; border-radius:6px; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">📊 Static Dashboard</a>
+        <a href="/live">🧪 Own Model (Test Data)</a>
+        <a href="/live-feed">🔴 Live Feed</a>
+        <a href="/model-comparison" class="active">📈 Model Comparison</a>
+    </div>
+    <p style="color:#888; margin:8px 0 20px 0; font-size:0.9em;">You are viewing: <strong>Model Comparison</strong> (algorithm evaluation)</p>
+
+    <h1>📈 Model Comparison</h1>
+    <p>Comparing Random Forest, Logistic Regression, and XGBoost on the same Stage 1 dataset (Normal vs Attack)</p>
+
+    <div class="chart-container">
+        <canvas id="comparisonChart"></canvas>
+    </div>
+
+    <table id="comparisonTable">
+        <thead>
+            <tr>
+                <th>Model</th>
+                <th>Accuracy</th>
+                <th>Precision</th>
+                <th>Recall</th>
+                <th>F1-Score</th>
+                <th>Prediction Time (s)</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <script>
+        fetch('/api/model-comparison')
+            .then(res => res.json())
+            .then(data => {
+                const models = Object.keys(data);
+                const accuracy = models.map(m => (data[m].accuracy * 100).toFixed(2));
+                const precision = models.map(m => (data[m].precision * 100).toFixed(2));
+                const recall = models.map(m => (data[m].recall * 100).toFixed(2));
+                const f1 = models.map(m => (data[m].f1 * 100).toFixed(2));
+
+                new Chart(document.getElementById('comparisonChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: models,
+                        datasets: [
+                            { label: 'Accuracy %', data: accuracy, backgroundColor: '#4fc3f7' },
+                            { label: 'Precision %', data: precision, backgroundColor: '#66bb6a' },
+                            { label: 'Recall %', data: recall, backgroundColor: '#f9a825' },
+                            { label: 'F1-Score %', data: f1, backgroundColor: '#ff5252' }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: { beginAtZero: false, min: 50, max: 100, ticks: { color: '#eee' }, grid: { color: '#333' } },
+                            x: { ticks: { color: '#eee' }, grid: { color: '#333' } }
+                        },
+                        plugins: {
+                            legend: { labels: { color: '#eee' } }
+                        }
+                    }
+                });
+
+                const bestAccuracy = Math.max(...accuracy);
+
+                const tbody = document.getElementById('tableBody');
+                models.forEach((model, i) => {
+                    const row = document.createElement('tr');
+                    const isBest = accuracy[i] == bestAccuracy;
+                    row.innerHTML = `
+                        <td>${model}</td>
+                        <td class="${isBest ? 'best' : ''}">${accuracy[i]}%</td>
+                        <td>${precision[i]}%</td>
+                        <td>${recall[i]}%</td>
+                        <td>${f1[i]}%</td>
+                        <td>${data[model].predict_time.toFixed(3)}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            });
+    </script>
+</body>
+</html>
