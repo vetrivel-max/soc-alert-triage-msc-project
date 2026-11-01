@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOC Alert Triage - Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-a: #050810;
+    --bg-b: #0b1220;
+    --panel: rgba(22,33,62,0.55);
+    --border: rgba(255,255,255,0.08);
+    --accent: #4fc3f7;
+    --accent2: #7c6fe0;
+    --text: #eef2fa;
+    --text-dim: #8c9ab3;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg-a);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, Segoe UI, sans-serif;
+  }
+  .stage {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse 900px 600px at 50% -5%, rgba(79,195,247,0.16), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 100%, rgba(124,111,224,0.14), transparent 60%),
+      linear-gradient(180deg, var(--bg-a), var(--bg-b));
+  }
+  .net {
+    position: absolute; inset: 0;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .net circle { fill: var(--accent); }
+  .net .pulse { animation: dotpulse 3.5s ease-in-out infinite; }
+  .net line { stroke: rgba(140,170,210,0.18); stroke-width: 1; }
+  @keyframes dotpulse {
+    0%, 100% { opacity: 0.35; r: 2.2; }
+    50% { opacity: 0.95; r: 3.4; }
+  }
+
+  .content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 24px;
+    width: 100%;
+  }
+
+  .emblem {
+    position: relative;
+    width: 86px; height: 86px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 28px;
+  }
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    opacity: 0;
+    animation: ringpulse 3.2s ease-out infinite;
+  }
+  .ring.r1 { width: 86px; height: 86px; animation-delay: 0s; }
+  .ring.r2 { width: 86px; height: 86px; animation-delay: 1.05s; }
+  .ring.r3 { width: 86px; height: 86px; animation-delay: 2.1s; }
+  @keyframes ringpulse {
+    0% { transform: scale(0.6); opacity: 0.55; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+  .shield {
+    width: 40px; height: 40px;
+    z-index: 1;
+    filter: drop-shadow(0 0 10px rgba(79,195,247,0.6));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ring, .net .pulse { animation: none; }
+  }
+
+  h1 {
+    font-size: 2.3rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+    text-align: center;
+  }
+  .tagline {
+    color: var(--text-dim);
+    font-size: 1rem;
+    text-align: center;
+    max-width: 380px;
+    line-height: 1.5;
+    margin: 0 0 40px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 34px 32px;
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+  }
+  .card h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 22px;
+    text-align: center;
+    color: var(--text-dim);
+    letter-spacing: 0.01em;
+  }
+  .error {
+    background: rgba(255,107,107,0.12);
+    border: 1px solid var(--danger);
+    color: #ffb3b3;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 0.87rem;
+    margin-bottom: 18px;
+    text-align: center;
+  }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    margin-bottom: 20px;
+    background: rgba(5,8,16,0.5);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 0.96rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79,195,247,0.15);
+  }
+  button {
+    width: 100%;
+    padding: 13px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #05101c;
+    font-weight: 700;
+    font-size: 0.96rem;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <svg class="net" width="100%" height="100%">
+      <line x1="8%" y1="20%" x2="22%" y2="40%"/>
+      <line x1="22%" y1="40%" x2="12%" y2="65%"/>
+      <line x1="88%" y1="15%" x2="76%" y2="38%"/>
+      <line x1="76%" y1="38%" x2="90%" y2="60%"/>
+      <line x1="15%" y1="85%" x2="30%" y2="70%"/>
+      <line x1="85%" y1="85%" x2="70%" y2="70%"/>
+      <circle class="pulse" cx="8%" cy="20%" r="2.5" style="animation-delay:0s"/>
+      <circle class="pulse" cx="22%" cy="40%" r="2.5" style="animation-delay:0.6s"/>
+      <circle class="pulse" cx="12%" cy="65%" r="2.5" style="animation-delay:1.2s"/>
+      <circle class="pulse" cx="88%" cy="15%" r="2.5" style="animation-delay:0.3s"/>
+      <circle class="pulse" cx="76%" cy="38%" r="2.5" style="animation-delay:0.9s"/>
+      <circle class="pulse" cx="90%" cy="60%" r="2.5" style="animation-delay:1.5s"/>
+      <circle class="pulse" cx="15%" cy="85%" r="2.5" style="animation-delay:1.8s"/>
+      <circle class="pulse" cx="30%" cy="70%" r="2.5" style="animation-delay:2.1s"/>
+      <circle class="pulse" cx="85%" cy="85%" r="2.5" style="animation-delay:2.4s"/>
+      <circle class="pulse" cx="70%" cy="70%" r="2.5" style="animation-delay:0.9s"/>
+    </svg>
+
+    <div class="content">
+      <div class="emblem">
+        <span class="ring r1"></span>
+        <span class="ring r2"></span>
+        <span class="ring r3"></span>
+        <svg class="shield" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3z" stroke="#4fc3f7" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 12l2 2 4-4.5" stroke="#4fc3f7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <h1>SOC Alert Triage</h1>
+      <p class="tagline">ML-powered network intrusion detection and analyst triage console.</p>
+
+      <div class="card">
+        <h2>Analyst sign in</h2>
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        <form method="POST">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autofocus autocomplete="username">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+          <button type="submit">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <title>Real-Time Live SOC Dashboard</title>
@@ -10,6 +10,7 @@
         th { background: #16213e; position: sticky; top: 0; }
         .Attack { color: #ff5252; font-weight: bold; }
         .Normal { color: #66bb6a; }
+        .Critical { background: #b71c1c; padding: 3px 8px; border-radius: 4px; color: #fff; }
         .High { background: #e65100; padding: 3px 8px; border-radius: 4px; }
         .Medium { background: #f9a825; padding: 3px 8px; border-radius: 4px; color: #000; }
         .Low { background: #43a047; padding: 3px 8px; border-radius: 4px; color: #fff; }
@@ -31,6 +32,9 @@
         .stat-high .value { color: #ff9100; }
         .stat-medium .value { color: #ffca28; }
         .stat-low .value { color: #43a047; }
+        .stat-confirmed .value { color: #66bb6a; }
+        .stat-fp .value { color: #ff5252; }
+        .stat-fprate .value { color: #ffca28; }
         .filter-bar { display: flex; gap: 12px; margin: 20px 0; flex-wrap: wrap; align-items: center; }
         .filter-bar input, .filter-bar select {
             background: #16213e; color: #eee; border: 1px solid #333; border-radius: 6px;
@@ -43,6 +47,21 @@
         .export-btn { background:#4fc3f7; color:#000; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer; }
         .export-btn:hover { background:#29b6f6; }
         .count { color: #aaa; margin-bottom: 10px; }
+        .charts-row { display: flex; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
+        .chart-box { background: #16213e; border-radius: 8px; padding: 16px 20px; max-width: 420px; }
+        .chart-box-wide { background: #16213e; border-radius: 8px; padding: 16px 20px; flex: 1; min-width: 420px; max-width: 700px; }
+        .report-btn { background: #333; color: #eee; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 0.85em; }
+        .report-btn:hover { background: #4fc3f7; color: #000; }
+        .fb-btn { border: none; border-radius: 4px; padding: 4px 8px; margin-right: 4px; font-size: 0.8em; cursor: pointer; }
+        .fb-confirm { background: #2e7d32; color: #fff; }
+        .fb-confirm:hover { background: #388e3c; }
+        .fb-fp { background: #555; color: #eee; }
+        .fb-fp:hover { background: #ff5252; color: #fff; }
+        .fb-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.85em; margin-right: 6px; display: inline-block; }
+        .fb-confirmed { background: #2e7d32; color: #fff; }
+        .fb-falsepos { background: #616161; color: #fff; }
+        .fb-undo { background: transparent; border: 1px solid #555; color: #aaa; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.8em; }
+        .fb-undo:hover { border-color: #4fc3f7; color: #4fc3f7; }
     </style>
 </head>
 <body>
@@ -62,6 +81,15 @@
     </div>
 
     <div class="stats-panel" id="statsPanel"></div>
+
+    <div class="charts-row">
+        <div class="chart-box">
+            <canvas id="riskChart"></canvas>
+        </div>
+        <div class="chart-box-wide">
+            <canvas id="timelineChart"></canvas>
+        </div>
+    </div>
 
     <div class="filter-bar">
         <input type="text" id="searchInput" placeholder="Search by Src IP or Dst IP...">
@@ -94,23 +122,75 @@
                 <th>Confidence</th>
                 <th>Attack Type</th>
                 <th>Risk Level</th>
+                <th>MITRE ATT&CK</th>
+                <th>Report</th>
+                <th>Analyst Feedback</th>
             </tr>
         </thead>
         <tbody id="alertsBody"></tbody>
     </table>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
         let allAlerts = [];
         let currentDisplayedAlerts = [];
         let filtersActive = false;
+        let riskChart = null;
+        let timelineChart = null;
+        let rowElements = {}; // keeps track of already-built table rows by alert id
+
+        function getMitre(attackType) {
+            if (!attackType) return '-';
+            const t = attackType.toLowerCase();
+            if (t.includes('ddos') || t.includes('dos')) return 'T1498/T1499 – Network/Endpoint Denial of Service';
+            if (t.includes('portscan')) return 'T1046 – Network Service Discovery';
+            if (t.includes('patator') || t.includes('brute')) return 'T1110 – Brute Force';
+            if (t.includes('bot')) return 'T1071 – Application Layer Protocol (C2)';
+            if (t.includes('infiltration')) return 'T1190 – Exploit Public-Facing Application';
+            if (t.includes('web attack')) return 'T1190 – Exploit Public-Facing Application';
+            if (t.includes('heartbleed')) return 'T1210 – Exploitation of Remote Services';
+            return '-';
+        }
+
+        function downloadIncidentPDF(alert) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setFontSize(16);
+            doc.text('SOC Incident Report', 14, 20);
+            doc.setDrawColor(79, 195, 247);
+            doc.line(14, 24, 196, 24);
+            doc.setFontSize(11);
+            let y = 36;
+            const lines = [
+                `Alert ID: ${alert.id}`,
+                `Time: ${alert.timestamp}`,
+                `Source IP: ${alert.src_ip || '-'}`,
+                `Destination IP: ${alert.dst_ip || '-'}`,
+                `Status: ${alert.status}`,
+                `Confidence: ${alert.confidence}%`,
+                `Attack Type: ${alert.attack_type || '-'}`,
+                `Risk Level: ${alert.risk_level || '-'}`,
+                `MITRE ATT&CK: ${getMitre(alert.attack_type)}`,
+                `Top Reasons: ${alert.top_reasons && alert.top_reasons.length ? alert.top_reasons.join(', ') : '-'}`
+            ];
+            lines.forEach(line => {
+                doc.text(line, 14, y);
+                y += 9;
+            });
+            doc.setFontSize(9);
+            doc.setTextColor(120);
+            doc.text('Generated by SOC Alert Triage Dashboard - Live Feed', 14, y + 10);
+            doc.save(`incident_report_alert_${alert.id}.pdf`);
+        }
 
         function exportToCSV(alerts, filename) {
             if (!alerts || alerts.length === 0) {
                 alert('No data to export');
                 return;
             }
-            const headers = Object.keys(alerts[0]).filter(k => k !== 'top_reasons');
+            const headers = Object.keys(alerts[0]).filter(k => k !== 'top_reasons' && k !== 'feedback');
             const rows = alerts.map(a => headers.map(h => `"${a[h] ?? ''}"`).join(','));
             const csv = [headers.join(','), ...rows].join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
@@ -122,6 +202,76 @@
             URL.revokeObjectURL(url);
         }
 
+        // Groups alerts by minute (HH:MM) and counts how many fall into each
+        // risk level, so we can plot "attacks over time" instead of just totals.
+        function buildTimelineData(alerts) {
+            const buckets = {};
+            alerts.forEach(a => {
+                if (!a.risk_level || !a.timestamp) return; // skip Normal traffic
+                const minuteKey = a.timestamp.slice(0, 5); // "HH:MM:SS" -> "HH:MM"
+                if (!buckets[minuteKey]) {
+                    buckets[minuteKey] = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+                }
+                if (buckets[minuteKey][a.risk_level] !== undefined) {
+                    buckets[minuteKey][a.risk_level]++;
+                }
+            });
+            const sortedKeys = Object.keys(buckets).sort();
+            return {
+                labels: sortedKeys,
+                critical: sortedKeys.map(k => buckets[k].Critical),
+                high: sortedKeys.map(k => buckets[k].High),
+                medium: sortedKeys.map(k => buckets[k].Medium),
+                low: sortedKeys.map(k => buckets[k].Low)
+            };
+        }
+
+        function updateTimelineChart(alerts) {
+            const { labels, critical, high, medium, low } = buildTimelineData(alerts);
+            if (timelineChart) {
+                timelineChart.data.labels = labels;
+                timelineChart.data.datasets[0].data = critical;
+                timelineChart.data.datasets[1].data = high;
+                timelineChart.data.datasets[2].data = medium;
+                timelineChart.data.datasets[3].data = low;
+                timelineChart.update();
+            } else {
+                timelineChart = new Chart(document.getElementById('timelineChart'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: 'Critical', data: critical, borderColor: '#ff1744', backgroundColor: '#ff1744', tension: 0.3 },
+                            { label: 'High', data: high, borderColor: '#ff9100', backgroundColor: '#ff9100', tension: 0.3 },
+                            { label: 'Medium', data: medium, borderColor: '#ffca28', backgroundColor: '#ffca28', tension: 0.3 },
+                            { label: 'Low', data: low, borderColor: '#43a047', backgroundColor: '#43a047', tension: 0.3 }
+                        ]
+                    },
+                    options: {
+                        plugins: {
+                            legend: { display: true, labels: { color: '#eee' } },
+                            title: { display: true, text: 'Attack Timeline (Alerts per Minute)', color: '#eee' }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { stepSize: 1, color: '#eee' } },
+                            x: { ticks: { color: '#eee' } }
+                        }
+                    }
+                });
+            }
+        }
+
+        function submitFeedback(id, verdict) {
+            fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id, verdict: verdict })
+            })
+            .then(res => res.json())
+            .then(() => loadAlerts())
+            .catch(err => console.error('Feedback save failed:', err));
+        }
+
         function loadAlerts() {
             fetch('/api/live-feed')
                 .then(res => res.json())
@@ -131,6 +281,7 @@
                         return;
                     }
                     const stats = data.stats;
+                    const fb = stats.feedback || { confirmed: 0, false_positive: 0, rate: 0 };
                     document.getElementById('statsPanel').innerHTML = `
                         <div class="stat-card stat-total"><div class="label">Total Alerts</div><div class="value">${stats.total}</div></div>
                         <div class="stat-card stat-attack"><div class="label">Attacks</div><div class="value">${stats.attacks}</div></div>
@@ -139,9 +290,40 @@
                         <div class="stat-card stat-high"><div class="label">High Risk</div><div class="value">${stats.risk_counts.High}</div></div>
                         <div class="stat-card stat-medium"><div class="label">Medium Risk</div><div class="value">${stats.risk_counts.Medium}</div></div>
                         <div class="stat-card stat-low"><div class="label">Low Risk</div><div class="value">${stats.risk_counts.Low}</div></div>
+                        <div class="stat-card stat-confirmed"><div class="label">Confirmed (TP)</div><div class="value">${fb.confirmed}</div></div>
+                        <div class="stat-card stat-fp"><div class="label">False Positives</div><div class="value">${fb.false_positive}</div></div>
+                        <div class="stat-card stat-fprate"><div class="label">FP Rate</div><div class="value">${fb.rate}%</div></div>
                     `;
+
+                    const chartData = [stats.risk_counts.Critical, stats.risk_counts.High, stats.risk_counts.Medium, stats.risk_counts.Low];
+                    if (riskChart) {
+                        riskChart.data.datasets[0].data = chartData;
+                        riskChart.update();
+                    } else {
+                        riskChart = new Chart(document.getElementById('riskChart'), {
+                            type: 'bar',
+                            data: {
+                                labels: ['Critical', 'High', 'Medium', 'Low'],
+                                datasets: [{
+                                    label: 'Alerts by Risk Level',
+                                    data: chartData,
+                                    backgroundColor: ['#ff1744', '#ff9100', '#ffca28', '#43a047']
+                                }]
+                            },
+                            options: {
+                                plugins: { legend: { display: false }, title: { display: true, text: 'Alerts by Risk Level', color: '#eee' } },
+                                scales: {
+                                    y: { beginAtZero: true, ticks: { stepSize: 1, color: '#eee' } },
+                                    x: { ticks: { color: '#eee' } }
+                                }
+                            }
+                        });
+                    }
+
                     document.getElementById('statusText').textContent = `Live - ${data.alerts.length} recent flows`;
                     allAlerts = data.alerts;
+
+                    updateTimelineChart(allAlerts);
 
                     if (filtersActive) {
                         applyFilters();
@@ -151,24 +333,112 @@
                 });
         }
 
+        // Builds the fixed part of a row (columns that never change for a given alert id)
+        function buildRowContent(row, alert) {
+            row.innerHTML = `
+                <td>${alert.id}</td>
+                <td>${alert.timestamp}</td>
+                <td>${alert.src_ip}</td>
+                <td>${alert.dst_ip}</td>
+                <td class="${alert.status}">${alert.status}</td>
+                <td>${alert.confidence}%</td>
+                <td>${alert.attack_type || '-'}</td>
+                <td>${alert.risk_level ? `<span class="${alert.risk_level}">${alert.risk_level}</span>` : '-'}</td>
+                <td>${getMitre(alert.attack_type)}</td>
+            `;
+            const reportTd = document.createElement('td');
+            const reportBtn = document.createElement('button');
+            reportBtn.className = 'report-btn';
+            reportBtn.textContent = '📄 PDF';
+            reportBtn.onclick = () => downloadIncidentPDF(alert);
+            reportTd.appendChild(reportBtn);
+            row.appendChild(reportTd);
+
+            const feedbackTd = document.createElement('td');
+            row.appendChild(feedbackTd);
+            row._feedbackTd = feedbackTd;
+
+            renderFeedbackCell(row, alert);
+        }
+
+        // Rebuilds ONLY the feedback cell's buttons/badge for a row
+        function renderFeedbackCell(row, alert) {
+            const feedbackTd = row._feedbackTd;
+            feedbackTd.innerHTML = '';
+
+            if (alert.status === 'Attack') {
+                if (alert.feedback) {
+                    const badge = document.createElement('span');
+                    badge.className = alert.feedback.verdict === 'confirmed' ? 'fb-badge fb-confirmed' : 'fb-badge fb-falsepos';
+                    badge.textContent = alert.feedback.verdict === 'confirmed' ? '✔ Confirmed' : '✘ False Positive';
+                    feedbackTd.appendChild(badge);
+                    const undoBtn = document.createElement('button');
+                    undoBtn.className = 'fb-undo';
+                    undoBtn.textContent = '↺';
+                    undoBtn.title = 'Clear feedback';
+                    undoBtn.onclick = () => submitFeedback(alert.id, null);
+                    feedbackTd.appendChild(undoBtn);
+                } else {
+                    const confirmBtn = document.createElement('button');
+                    confirmBtn.className = 'fb-btn fb-confirm';
+                    confirmBtn.textContent = '✔ Confirm';
+                    confirmBtn.onclick = () => submitFeedback(alert.id, 'confirmed');
+                    const fpBtn = document.createElement('button');
+                    fpBtn.className = 'fb-btn fb-fp';
+                    fpBtn.textContent = '✘ False Positive';
+                    fpBtn.onclick = () => submitFeedback(alert.id, 'false_positive');
+                    feedbackTd.appendChild(confirmBtn);
+                    feedbackTd.appendChild(fpBtn);
+                }
+            } else {
+                feedbackTd.textContent = '-';
+            }
+
+            row._lastFeedback = alert.feedback ? alert.feedback.verdict : null;
+        }
+
+        // This is the key fix: only touch a row's buttons if its feedback actually changed.
+        // Every other row is left completely alone, so clicking never hits a disappearing button.
         function renderTable(alerts) {
             currentDisplayedAlerts = alerts;
             document.getElementById('alertCount').textContent = `Showing ${alerts.length} of ${allAlerts.length} alerts`;
             const tbody = document.getElementById('alertsBody');
-            tbody.innerHTML = '';
+
+            const currentIds = new Set(alerts.map(a => String(a.id)));
+
+            // Drop rows that are no longer in the list (filtered out, or evicted from the buffer)
+            Object.keys(rowElements).forEach(id => {
+                if (!currentIds.has(id)) {
+                    rowElements[id].remove();
+                    delete rowElements[id];
+                }
+            });
+
+            let previousNode = null;
             alerts.forEach(alert => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${alert.id}</td>
-                    <td>${alert.timestamp}</td>
-                    <td>${alert.src_ip}</td>
-                    <td>${alert.dst_ip}</td>
-                    <td class="${alert.status}">${alert.status}</td>
-                    <td>${alert.confidence}%</td>
-                    <td>${alert.attack_type || '-'}</td>
-                    <td>${alert.risk_level ? `<span class="${alert.risk_level}">${alert.risk_level}</span>` : '-'}</td>
-                `;
-                tbody.appendChild(row);
+                const id = String(alert.id);
+                let row = rowElements[id];
+
+                if (!row) {
+                    row = document.createElement('tr');
+                    rowElements[id] = row;
+                    buildRowContent(row, alert);
+                } else {
+                    const newVerdict = alert.feedback ? alert.feedback.verdict : null;
+                    if (row._lastFeedback !== newVerdict) {
+                        renderFeedbackCell(row, alert);
+                    }
+                }
+
+                // Keep rows in the correct order without destroying unaffected ones
+                if (previousNode) {
+                    if (previousNode.nextSibling !== row) {
+                        tbody.insertBefore(row, previousNode.nextSibling);
+                    }
+                } else if (tbody.firstChild !== row) {
+                    tbody.insertBefore(row, tbody.firstChild);
+                }
+                previousNode = row;
             });
         }
 

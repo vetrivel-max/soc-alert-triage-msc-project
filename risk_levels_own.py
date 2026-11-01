@@ -14,11 +14,15 @@ def get_risk_level_own(attack_type, confidence=None):
     """
     Returns risk level for a given attack type.
     Optionally adjusts based on model confidence:
+    - A DoS attack with very high confidence (95%+) is treated as Critical,
+      since a strong denial-of-service attack can disrupt operations immediately.
     - Low confidence detections get downgraded (less certain = less urgent)
     """
     base_risk = RISK_LEVELS_OWN.get(attack_type, 'Medium')
 
     if confidence is not None:
+        if attack_type == 'DoS' and confidence >= 60:
+            return 'Critical'
         if confidence < 60:
             downgrade_map = {'Critical': 'High', 'High': 'Medium', 'Medium': 'Low'}
             return downgrade_map.get(base_risk, 'Low')
